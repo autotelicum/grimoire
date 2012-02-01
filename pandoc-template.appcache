@@ -8,6 +8,8 @@ codemirror/codemirror.css
 codemirror/codemirror.js
 codemirror/coffeescript.js
 codemirror/pantheme.css
+scheme-on-coffee/parse.js
+scheme-on-coffee/eval.js
 ../img/ostrich.jpg
 ../img/SmoothCoverInteractive.png
 ../img/TadaOnMacOSX-small.png

@@ -112,6 +112,8 @@ These scripts should be the same as those listed in the application manifest, `p
   script src: 'node_modules/qc.js'
   script src: 'codemirror/codemirror.js'
   script src: 'codemirror/coffeescript.js'
+  script src: 'scheme-on-coffee/parse.js'
+  script src: 'scheme-on-coffee/eval.js'
 ~~~~
 
 ### The Interactive Environment
@@ -424,9 +426,11 @@ The code for the field or the document is obtained with tags that relate the cod
             for codeSegment in window.document.getElementsByTagName 'pre'
               if codeSegment.className is 'sourceCode'
                 codeTag = codeSegment.firstChild
-                if codeTag.className is 'sourceCode coffeescript' \
-                    or codeTag.className is 'sourceCode CoffeeScript'
-                  getCode codeTag
+                switch codeTag.className
+                  when 'sourceCode coffeescript', 'sourceCode CoffeeScript',\
+                       'sourceCode javascript', 'sourceCode JavaScript', \
+                       'sourceCode scheme', 'sourceCode Scheme'
+                    getCode codeTag
 ~~~~
 
 Stitch together continuing code segments. This is done based on a test of whether they begin with whitespace. For example a class with methods in different code blocks or a program that is split up in sections as in this document. This only works during full evaluation.
@@ -453,6 +457,16 @@ A performance test showed that the vast majority of time was consumed by this li
             getParent(elem).removeChild elem
 ~~~~
 
+#### Instrumentation
+
+The `instrument` function augments the code to protect against long running code.
+
+~~~~ {.coffeescript}
+        instrument = (code) ->
+          console.log code # TODO reuse mozilla/narcissus parser?
+          code
+~~~~
+
 #### Evaluation
 
 No real sandbox here, so the names and loop construct was changed to minimize the chance of conflict with the code that is being executed. Since clearing output made full reevaluation impossible, a small system where variables that are mentioned in `globalNames` are automatically promoted from the execution environment to the global environment was set up. This makes the named previous definitions available in subsequent code blocks during incremental evaluation (where there is no code stitching).
@@ -469,8 +483,35 @@ No real sandbox here, so the names and loop construct was changed to minimize th
           do (currentTag) ->
             try
               draw = undefined
-              incredibleResult = eval CoffeeScript.compile \
-                currentSegment.code, bare:on
+              # NOTE Wrapping this in a function changes `this`
+              # so globals are no longer defined in JS/CS
+              switch currentSegment.codeTag.className
+                when 'sourceCode coffeescript', 'sourceCode CoffeeScript'
+                  incredibleResult = eval instrument CoffeeScript.compile \
+                    currentSegment.code, bare:on
+                when 'sourceCode javascript', 'sourceCode JavaScript'
+                  incredibleResult = eval instrument currentSegment.code
+                when 'sourceCode scheme', 'sourceCode Scheme'
+                  extendedProcedures = list(
+                    list('view', view),
+                    list('show', show),
+                    list('showDocument', showDocument),
+                    list('runOnDemand', runOnDemand),
+                    list('confirm', confirm),
+                    list('prompt', prompt)
+                  )
+                  extendedProcedureNames = map car, extendedProcedures
+                  extendedProcedureObjects = # Extended set of `primitive`s
+                    map ((proc) -> list 'primitive', cadr(proc)),
+                    extendedProcedures
+                  @TheGlobalEnvironment = extendEnvironment \
+                    extendedProcedureNames,
+                    extendedProcedureObjects,
+                    TheGlobalEnvironment
+                  # TODO Only variables, not functions, are implemented
+                  for magic in globalNames.split ' '
+                    defineVariable magic, this[magic], TheGlobalEnvironment
+                  incredibleResult = execute instrument currentSegment.code
               drawCanvas draw if draw?
               if incredibleResult isnt undefined and
                  typeof incredibleResult isnt 'function'
@@ -478,7 +519,12 @@ No real sandbox here, so the names and loop construct was changed to minimize th
               if globalNames?
                 promoteToGlobal = (magic) ->
                   try
-                    magicValue = eval magic
+                    switch currentSegment.codeTag.className
+                      when 'sourceCode coffeescript', 'sourceCode CoffeeScript', \
+                           'sourceCode javascript', 'sourceCode JavaScript'
+                        magicValue = eval magic
+                      when 'sourceCode scheme', 'sourceCode Scheme'
+                        magicValue = execute magic
                   catch error
                     return # doesn't exist
                   this[magic] = magicValue

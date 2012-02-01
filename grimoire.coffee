@@ -30,6 +30,8 @@ webfragment = ->
   script src: 'node_modules/qc.js'
   script src: 'codemirror/codemirror.js'
   script src: 'codemirror/coffeescript.js'
+  script src: 'scheme-on-coffee/parse.js'
+  script src: 'scheme-on-coffee/eval.js'
   coffeescript ->
     @reveal = (instance) -> # Very pandoc specific: requires --section-divs
       instance.getElementsByTagName('section')[0]?.style.display = 'block'
@@ -270,9 +272,11 @@ webfragment = ->
             for codeSegment in window.document.getElementsByTagName 'pre'
               if codeSegment.className is 'sourceCode'
                 codeTag = codeSegment.firstChild
-                if codeTag.className is 'sourceCode coffeescript' \
-                    or codeTag.className is 'sourceCode CoffeeScript'
-                  getCode codeTag
+                switch codeTag.className
+                  when 'sourceCode coffeescript', 'sourceCode CoffeeScript',\
+                       'sourceCode javascript', 'sourceCode JavaScript', \
+                       'sourceCode scheme', 'sourceCode Scheme'
+                    getCode codeTag
           segments = (segment for segment in segments when segment?)
           for segment, i in segments
             if i > 0 and /^[\s]/.test segment.code
@@ -285,6 +289,9 @@ webfragment = ->
           while outList and outLength > 0
             elem = outList[--outLength]
             getParent(elem).removeChild elem
+        instrument = (code) ->
+          console.log code # TODO reuse mozilla/narcissus parser?
+          code
         # Evaluate code segments
         incredibleLength = segments.length
         for incredibleIndex in [0...incredibleLength] by 1
@@ -296,8 +303,35 @@ webfragment = ->
           do (currentTag) ->
             try
               draw = undefined
-              incredibleResult = eval CoffeeScript.compile \
-                currentSegment.code, bare:on
+              # NOTE Wrapping this in a function changes `this`
+              # so globals are no longer defined in JS/CS
+              switch currentSegment.codeTag.className
+                when 'sourceCode coffeescript', 'sourceCode CoffeeScript'
+                  incredibleResult = eval instrument CoffeeScript.compile \
+                    currentSegment.code, bare:on
+                when 'sourceCode javascript', 'sourceCode JavaScript'
+                  incredibleResult = eval instrument currentSegment.code
+                when 'sourceCode scheme', 'sourceCode Scheme'
+                  extendedProcedures = list(
+                    list('view', view),
+                    list('show', show),
+                    list('showDocument', showDocument),
+                    list('runOnDemand', runOnDemand),
+                    list('confirm', confirm),
+                    list('prompt', prompt)
+                  )
+                  extendedProcedureNames = map car, extendedProcedures
+                  extendedProcedureObjects = # Extended set of `primitive`s
+                    map ((proc) -> list 'primitive', cadr(proc)),
+                    extendedProcedures
+                  @TheGlobalEnvironment = extendEnvironment \
+                    extendedProcedureNames,
+                    extendedProcedureObjects,
+                    TheGlobalEnvironment
+                  # TODO Only variables, not functions, are implemented
+                  for magic in globalNames.split ' '
+                    defineVariable magic, this[magic], TheGlobalEnvironment
+                  incredibleResult = execute instrument currentSegment.code
               drawCanvas draw if draw?
               if incredibleResult isnt undefined and
                  typeof incredibleResult isnt 'function'
@@ -305,7 +339,12 @@ webfragment = ->
               if globalNames?
                 promoteToGlobal = (magic) ->
                   try
-                    magicValue = eval magic
+                    switch currentSegment.codeTag.className
+                      when 'sourceCode coffeescript', 'sourceCode CoffeeScript', \
+                           'sourceCode javascript', 'sourceCode JavaScript'
+                        magicValue = eval magic
+                      when 'sourceCode scheme', 'sourceCode Scheme'
+                        magicValue = execute magic
                   catch error
                     return # doesn't exist
                   this[magic] = magicValue

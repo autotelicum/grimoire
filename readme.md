@@ -1,5 +1,4 @@
 
-
 # Grimoire
 
 
@@ -13,6 +12,10 @@ This project is **not** ready for general use.
 The program source code is in `grimoire.md`; `grimoire.coffee` is a generated extract.
 
 The project is maintained in `darcs` and updated via `darcs-to-git`.
+
+This project is currently the victim of [structured procrastination](http://www.structuredprocrastination.com/)…
+
+I will get back to it when I have something more _important_ to do.
 
 
 ### Dependencies
